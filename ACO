@@ -1,0 +1,222 @@
+clc
+clear
+close all
+
+%% 障碍物
+cylinderMatrix =[1,-2.5;1,-2;1,-1.5;1,-1;1,-0.5;1,0;1,0.5;1,1;1,1.5;1,2;  -2,-4.5;-2,-4;-2,-3.5;-2,-3;-2,-2.5;-2,-2;-2,-1.5;-2,1.5;-2,2;-2,2.5;-2,3;-2,3.5;-2,4;-2,4.5;];%圆柱体中心坐标（n*2矩阵，没有第三个维度，从z=0开始绘制圆柱体）
+cylinderRMatrix =[0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;  0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;0.25;];%圆柱体半径（n*1向量）
+cylinderHMatrix =[1.5;1.5;1.5;1.5;1.5;1.5;1.5;1.5;1.5;1.5;5;5;5;5;5;5;5;5;5;5;5;5;5;5;];%圆柱体高（n*1向量）
+%% 起始点y和起始点z
+start =[-4 -2 0.5];
+goal =[4 0 1];
+%% 参数设置
+popNumber = 20;  % 蚁群个体数量
+rou = 0.1;        % 挥发因子
+bestFitness = []; % 每一代的最佳适应值储存列表
+bestfitness = inf;% 初始化最佳适应值（本案例中越小越好）
+everyIterFitness = [];
+
+deltaX = 0.5; deltaY = 0.5; deltaZ = 0.5;%deltaX为对x轴的切片步长，deltaY和deltaZ为每一个切片下对Y轴和Z轴的网格划分步长，每只蚂蚁的搜索半径
+gridXNumber = floor(abs(goal(1) - start(1)) / deltaX);%横向切片的数量
+gridYNumber = 1000; gridZNumber = 500;
+ybegin = start(2) - 20*deltaY; zbegin = start(3) - 20*deltaZ;
+pheromone = ones(gridXNumber, gridYNumber, gridZNumber);
+ycMax =5 ; zcMax = 5; % 蚂蚁沿y轴最大变动格子数和沿z轴最大变动格子数
+bestPath = []; 
+iterMax =50;%150 
+
+
+alpha = 1; % 信息素重要程度因子
+beta = 1; % 启发函数重要程度因子
+Q=100;%信息素常数 信息素浓度 信息素强度
+iterMax =100;%150 
+
+
+tic%开始计时
+%% 绘制障碍环境
+figure(1)
+[n,~] = size(cylinderMatrix);
+for i = 1:n   %绘制圆柱体障碍物
+    [x,y,z] = cylinder(cylinderRMatrix(i));
+    z(2,:) = cylinderHMatrix(i);
+    surfc(x + cylinderMatrix(i,1),y + cylinderMatrix(i,2),...
+          z,'FaceColor','black');
+    hold on;
+end
+axis([-5,5,-5,5,0,5])
+xlabel('x');ylabel('y');zlabel('z');
+bar1 = scatter3(start(1),start(2),start(3),80,"cyan",'filled','o','MarkerEdgeColor','k');hold on
+bar2 = scatter3(goal(1),goal(2),goal(3),80,"magenta",'filled',"o",'MarkerEdgeColor','k');
+text(start(1),start(2),start(3),'   Отправная точка'); text(goal(1),goal(2),goal(3),'   Конечная точка');
+
+%% 主循环
+
+for iter = 1:iterMax
+     fprintf("程序已运行：%.2f%%\n",iter/iterMax*100);
+     fprintf('迭代第%d次\n',iter);
+    % 路径搜索
+    [path, pheromone] = searchPath(popNumber, pheromone, start, goal, ycMax, zcMax,...
+                                   deltaX, deltaY, deltaZ,...
+                                   cylinderMatrix, cylinderRMatrix, cylinderHMatrix,...
+                                   ybegin, zbegin, gridYNumber, gridZNumber,alpha,beta);
+    % 路径适应值计算(路径长度)
+    fitness = calFit(path, deltaX, start, goal);
+    [newBestFitness, bestIndex] = min(fitness);
+     Meanfitness(iter)=mean(fitness);
+    everyIterFitness = [everyIterFitness, newBestFitness];
+    
+    if newBestFitness < bestfitness
+        bestfitness = newBestFitness;
+        bestPath = path(bestIndex, :, :);
+    end
+    bestFitness = [bestFitness, bestfitness];
+    % 更新信息素
+    cfit = Q/ bestfitness;
+ 
+    iterNum = 0;
+    for x = start(1) + deltaX : deltaX : goal(1) - 0.001
+        iterNum = iterNum + 1;
+        pheromone(iterNum, round((bestPath(:,iterNum+1,1)-ybegin)/deltaY), round((bestPath(:,iterNum+1,2)-zbegin)/deltaZ))...
+        = (1 - rou) * pheromone(iterNum, round((bestPath(:,iterNum+1,1)-ybegin)/deltaY), round((bestPath(:,iterNum+1,2)-zbegin)/deltaZ)) + cfit;
+    end
+end
+
+
+%%  绘制路径
+x = [start(1):deltaX:goal(1)-0.001,goal(1)];
+
+[~,m] = size(x);
+path_ = [];
+for i = 1:m
+    path_ = [path_;bestPath(:,i,1),bestPath(:,i,2)];
+end
+bar3 = plot3(x, path_(:,1), path_(:,2),'-o','Color','r','MarkerSize',4,'MarkerFaceColor','k');
+xlabel('x','fontsize',12);
+ylabel('y','fontsize',12);
+zlabel('z','fontsize',12);
+legend([bar1,bar2,bar3],["Отправная точка","Конечная точка","Траектория движения конечных точек роботизированных рук"])
+title('Трехмерное пространство планирования пути','fontsize',12);
+set(gcf, 'Renderer', 'ZBuffer')
+hold on
+
+
+% 绘制适应值变化图
+figure(2)
+plot(bestFitness,'LineWidth',1,'Color','r'); hold on;
+plot(everyIterFitness,'LineWidth',1,'Color','b');
+xx=1:iterMax;
+ hold on;
+plot(xx,Meanfitness,'LineWidth',1,'Color','y');
+legend('Кратчайшие пути','Кратчайший путь на поколение','Средний путь на поколение')
+title('Сравнение оптимального и среднего путей'); xlabel('Количество итераций'); ylabel('Длина пути'); grid on;
+%以路径长度作为适应值
+
+toc%结束计时
+
+
+
+
+
+
+
+
+
+
+
+
+%% 函数
+
+%路径搜索函数
+function [path, pheromone] = searchPath(popNumber, pheromone, start, goal, ycMax, zcMax,...
+                                        deltaX, deltaY, deltaZ,...
+                                        cylinderMatrix, cylinderRMatrix, cylinderHMatrix,...
+                                        ybegin, zbegin, gridYNumber, gridZNumber,alpha,beta)
+% 获取从起点到终点的路径函数
+path = []; % 用于记录所有蚂蚁的路径
+for ant = 1:popNumber % 对于每一只蚂蚁
+    path(ant, 1, 1:2) = start(2:3); % 只记录y和z轴坐标，x轴每次加deltaX
+    nowPoint = start(2:3);
+    iterNum = 0;
+    for x = start(1) + deltaX : deltaX : goal(1) - 0.001 % 减去一个小数避免x直接取到goal(1)
+        iterNum = iterNum + 1;
+        nextPoint = [];
+        p = [];   
+        for y = -ycMax * deltaY : deltaY : ycMax * deltaY
+            for z = -zcMax * deltaZ : deltaZ : zcMax * deltaZ
+                nextPoint = [nextPoint; nowPoint + [y, z]];
+                if nextPoint(end,1) > ybegin+0.01 && nextPoint(end,1) < ybegin + gridYNumber*deltaY && ...
+                   nextPoint(end,2) > zbegin+0.01 && nextPoint(end,2) < zbegin + gridZNumber*deltaZ  % 判断是否越界（信息素矩阵大小已经定了，避免超出）
+                    hValue = calHeuristicValue(nowPoint, nextPoint(end,:), goal, x, deltaX,...
+                                                cylinderMatrix, cylinderRMatrix, cylinderHMatrix);
+%                     pher = pheromone(iterNum, round((nextPoint(end,1) - ybegin)/deltaY), round((nextPoint(end,2) - zbegin)/deltaZ));
+                    try
+                        pher = pheromone(iterNum, round((nextPoint(end,1) - ybegin)/deltaY), round((nextPoint(end,2) - zbegin)/deltaZ));
+                    catch
+                        round((nextPoint(end,1) - ybegin)/deltaY)
+                    end
+                   p = [p, (pher.^(alpha) )* (hValue.^(beta))];
+                else
+                    p = [p,0]; %置零在轮盘赌中不可能被选中
+                end
+            end
+        end
+        % 轮盘赌选择下一坐标点
+        p1 = p / sum(p); % 归一化
+        pc = cumsum(p1);
+        targetIndex = find(pc >= rand);
+        targetNextPoint = nextPoint(targetIndex(1),:);
+        path(ant, iterNum + 1, 1:2) = targetNextPoint;
+        nowPoint = targetNextPoint;
+    end
+    path(ant, iterNum + 2, 1:2) = goal(2:3);
+end
+
+end
+%计算启发值
+function h = calHeuristicValue(now, next, goal, x, deltaX, ...
+                               cylinderMatrix, cylinderRMatrix, cylinderHMatrix)
+% 判断下一个坐标点是否碰撞，若碰撞则将启发值置为0，在后续的轮盘赌点位选择时将不可能被选中
+nextXYZ = [x, next];
+flag = checkCol(nextXYZ,cylinderMatrix, cylinderRMatrix, cylinderHMatrix);
+% 计算启发值
+d1 = getDist([x - deltaX, now], [x, next]);
+d2 = getDist([x, next], goal);
+%计算距离
+D = 50 / (d1 + d2);
+%计算高度
+% M=30/abs(next(end,2)+1);
+M=1;
+%计算启发值
+h = flag* D * M;
+end
+
+function flag = checkCol(pos,cylinderCenter,cylinderR, cylinderH)
+% 碰撞检测函数
+[numberOfCylinder, ~] = size(cylinderCenter);
+flag = true;
+for i = 1:numberOfCylinder
+    if getDist(pos(1:2), cylinderCenter(i,:)) <= cylinderR(i) && pos(3) <= cylinderH(i)
+        flag = false;
+        break;
+    end
+end
+if pos(3) <= 0, flag = false; end
+end
+
+%两点之间的距离
+function d = getDist(x,y)
+d = sqrt(sum((x - y).^2));
+end
+
+%计算适应值函数
+function f = calFit(path, deltaX, start, goal)
+% 计算适应值函数
+[n,m,~] = size(path);
+x = [start(1) : deltaX : goal(1) - 0.001, goal(1)];
+for i = 1:n
+    f(i) = 0;
+    for j = 1:m-1
+        f(i) = f(i) + getDist([x(j), path(i,j,1), path(i,j,2)], [x(j+1), path(i,j+1,1), path(i,j+1,2)]);
+    end
+end
+end
